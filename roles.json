@@ -1,0 +1,25 @@
+{
+  "_comment": "Role presets the chatbot understands. Users can say e.g. 'find the decision makers at acme.com'. Edit freely; each key maps to the Apollo job titles (and optional seniorities) to search for. Users can also define new roles in chat.",
+  "decision makers": {
+    "titles": ["Owner", "Founder", "Co-Founder", "CEO", "President", "Managing Partner", "Managing Director", "Principal"],
+    "seniorities": ["owner", "founder", "c_suite", "partner"]
+  },
+  "finance": {
+    "titles": ["CFO", "Chief Financial Officer", "VP Finance", "Controller", "Head of Finance", "Finance Director"]
+  },
+  "operations": {
+    "titles": ["COO", "Chief Operating Officer", "VP Operations", "Director of Operations", "Head of Operations"]
+  },
+  "sales": {
+    "titles": ["CRO", "Chief Revenue Officer", "VP Sales", "Head of Sales", "Sales Director"]
+  },
+  "marketing": {
+    "titles": ["CMO", "Chief Marketing Officer", "VP Marketing", "Head of Marketing", "Marketing Director"]
+  },
+  "hr": {
+    "titles": ["CHRO", "Chief People Officer", "VP Human Resources", "Head of HR", "HR Director", "Head of People"]
+  },
+  "corporate development": {
+    "titles": ["VP Corporate Development", "Head of Corporate Development", "Director of M&A", "Head of M&A"]
+  }
+}
