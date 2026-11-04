@@ -125,7 +125,9 @@ Rules:
 - search_people and lookup_company are free. enrich_person and enrich_people spend 1 Apollo credit per person found. Never enrich the same person twice in a chat; earlier results are listed in the notes on previous turns.
 - Mobile numbers: ${$("mobile").checked ? "the user turned mobile numbers ON, so set mobile=true on enrichment calls." : "the user turned mobile numbers OFF; do not set mobile=true. If they ask for a phone, report any phone Apollo returned and tell them to tick 'Include mobile numbers'."}
 - Search results mask surnames (e.g. "Phil Mo***n"); enrichment reveals them. Never present a masked name as final.
-- Never invent contact details. Report only what the tools returned; write "not found" for missing fields.
+- If Apollo has no email for a person (not found, or found without an email), call guess_email with their first name, last name and company domain. It learns the company's email format from colleagues' known emails and builds a likely address. Report it as: Email: <address> (unverified, guessed from the company's <pattern> format, based on N known emails). If guess_email reports no known colleague emails, it falls back to the most common format: say so, give the address as a low-confidence guess, and offer to learn the real format by looking up up to 2 colleagues (up to 2 credits); call guess_email again with sample_colleagues=true only if the user agrees.
+- Only call verify_email when the user asks to check a guessed address (up to 1 credit). "not_validated" means the check couldn't confirm it, not that it is wrong.
+- Never invent contact details. Apart from clearly labelled guesses from guess_email, report only what the tools returned; write "not found" for missing fields.
 
 Answer format (plain text, light Markdown only: **bold**, bullet lists, links):
 For each person: **Name**, title, company, then bullets for Email (add the email status if not verified), Mobile, Other phones, LinkedIn. Keep it short; no preamble.`;
@@ -169,7 +171,7 @@ async function pollPhones(requestId, signal, step){
   for (let i = 0; i < 6; i++) {
     await new Promise(r => setTimeout(r, 10000));
     if (signal.aborted) return {status: "cancelled"};
-    step.textContent = `Waiting for mobile numbers from Apollo (${(i + 1) * 10}s)`;
+    step.textContent = `Waiting for Apollo (${(i + 1) * 10}s)`;
     try {
       const res = await apollo("apollo_webhook_result_show", {request_id: String(requestId)}, signal);
       if (res && (res.status === "success" || res.status === "failed")) return res;
@@ -263,8 +265,118 @@ function makeTools(addStep){
         step.className = "done"; step.textContent = `Found ${(res.organizations || []).length} company matches`;
         return clip({organizations: (res.organizations || []).map(o => pick(o, ["id","name","domain","website_url"]))});
       }
+    },
+    {
+      name: "guess_email",
+      description: "When Apollo has no email for someone: learn the company's email format from colleagues' known emails and build a likely, UNVERIFIED address. Free unless sample_colleagues=true (then up to 2 credits).",
+      inputSchema: {type:"object", properties:{
+        first_name:{type:"string"}, last_name:{type:"string"}, domain:{type:"string", description:"Company email domain or website"},
+        sample_colleagues:{type:"boolean", description:"Look up up to 2 colleagues to learn the format (up to 2 credits). Only after the user agrees."}},
+        required:["first_name","last_name","domain"]},
+      async execute(input, {signal}){
+        const domain = String(input.domain).toLowerCase().replace(/^https?:\/\//,"").replace(/^www\./,"").split("/")[0].replace(/^.*@/, "");
+        const first = String(input.first_name), last = String(input.last_name);
+        if (!domain.includes(".")) throw new Error("Need the company's domain, e.g. acme.com.");
+        const step = addStep(`Working out the email format at ${domain}`);
+        const atDomain = e => typeof e === "string" && e.toLowerCase().endsWith("@" + domain);
+        const samples = [], seen = new Set();
+        const add = p => { if (p && atDomain(p.email) && p.first_name && (p.last_name) && !seen.has(p.email.toLowerCase())) { seen.add(p.email.toLowerCase()); samples.push({first_name: p.first_name, last_name: p.last_name, email: p.email}); } };
+        // 1. People already looked up in this chat.
+        for (const v of Object.values(enrichedThisChat)) add(v.person);
+        // 2. Contacts the team already saved in Apollo (free).
+        try {
+          const res = await apollo("apollo_contacts_search", {q_keywords: domain, per_page: 50, fields: [{contacts: ["first_name","last_name","email"]}]}, signal);
+          for (const c of res.contacts || []) add(c);
+        } catch (e) { if (signal.aborted) throw e; }
+        // 3. Optionally look up up to 2 colleagues who have an email (costs credits).
+        let creditsUsed = 0;
+        if (input.sample_colleagues && inferEmailFormat(samples).usable === 0) {
+          step.textContent = `Looking up colleagues at ${domain} to learn the email format`;
+          const found = await apollo("apollo_mixed_people_api_search", {q_organization_domains_list: [domain], contact_email_status: ["verified"], per_page: 5}, signal);
+          const ids = (found.people || []).filter(p => p.has_email).map(p => p.id).slice(0, 2);
+          if (ids.length) {
+            const res = await apollo("apollo_people_bulk_match", {details: ids.map(id => ({id}))}, signal);
+            for (const m of (res.matches || []).filter(Boolean)) { const sp = slimPerson(m); if (sp.id) enrichedThisChat[sp.id] = {person: sp}; add(sp); creditsUsed++; }
+            refreshCredits();
+          }
+        }
+        const fmt = inferEmailFormat(samples);
+        let ranked = fmt.ranked, basis = "known_colleague_emails";
+        if (!fmt.usable) { ranked = PATTERN_PRIOR.map(p => ({pattern: p})); basis = "common_format_fallback"; }
+        const guesses = ranked.slice(0, 3).map(r => ({...r, email: buildEmail(r.pattern, first, last, domain)})).filter(g => g.email);
+        if (!guesses.length) throw new Error("Couldn't build an address from that name.");
+        const top = fmt.ranked[0];
+        const confidence = basis === "common_format_fallback" ? "low" : (fmt.usable >= 3 && top.share >= 70 ? "high" : "medium");
+        step.className = "done";
+        step.textContent = basis === "common_format_fallback" ? `No known emails at ${domain}; used the most common format` : `Learned ${domain} format from ${fmt.usable} known ${fmt.usable === 1 ? "email" : "emails"}`;
+        return clip({
+          status: "UNVERIFIED guess, not from Apollo", basis, confidence,
+          best_guess: guesses[0].email, pattern: guesses[0].pattern,
+          alternatives: guesses.slice(1).map(g => g.email),
+          known_emails_used: fmt.usable, examples: samples.slice(0, 3).map(x => x.email),
+          credits_used: creditsUsed
+        });
+      }
+    },
+    {
+      name: "verify_email",
+      description: "Check whether an email address accepts mail. Up to 1 credit. Only when the user asks.",
+      inputSchema: {type:"object", properties:{email:{type:"string"}}, required:["email"]},
+      async execute(input, {signal}){
+        const email = String(input.email).trim();
+        const step = addStep(`Checking ${email}`);
+        const res = await apollo("apollo_email_validation_validate", {emails: [email]}, signal);
+        if (!res.request_id) throw new Error(res.error || "Apollo didn't accept that address for checking.");
+        const out = await pollPhones(res.request_id, signal, step);
+        step.className = "done"; step.textContent = `Checked ${email}`;
+        refreshCredits();
+        return clip(out);
+      }
     }
   ];
+}
+
+/* ---------- Email format inference ---------- */
+const EMAIL_PATTERNS = [
+  ["first.last", (f,l) => `${f}.${l}`], ["firstlast", (f,l) => f + l], ["flast", (f,l) => f[0] + l],
+  ["f.last", (f,l) => `${f[0]}.${l}`], ["first", (f) => f], ["first_last", (f,l) => `${f}_${l}`],
+  ["first-last", (f,l) => `${f}-${l}`], ["firstl", (f,l) => f + l[0]], ["first.l", (f,l) => `${f}.${l[0]}`],
+  ["last.first", (f,l) => `${l}.${f}`], ["lastfirst", (f,l) => l + f], ["lastf", (f,l) => l + f[0]], ["last", (f,l) => l]
+];
+// Share of US business addresses per format, for when no colleague emails are known.
+const PATTERN_PRIOR = ["first.last", "first", "flast", "firstlast", "f.last", "firstl"];
+function nameParts(first, last){
+  const clean = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z\s'-]/g, "").trim();
+  const f = clean(first).split(/\s+/)[0] || "";
+  const lastWords = clean(last).split(/\s+/).filter(Boolean);
+  const strip = s => s.replace(/['-]/g, "");
+  const joined = lastWords.join("");                       // "de la cruz" -> "delacruz"
+  const final = lastWords.length ? lastWords[lastWords.length - 1] : "";  // -> "cruz"
+  return {f: strip(f), l: strip(joined), lLast: strip(final), lHyphen: joined.replace(/'/g, "")};
+}
+function patternsFor(first, last, local){
+  const {f, l, lLast, lHyphen} = nameParts(first, last);
+  if (!f || !l) return [];
+  local = String(local).toLowerCase();
+  return EMAIL_PATTERNS.filter(([, build]) => [l, lLast, lHyphen].some(x => build(f, x) === local)).map(([name]) => name);
+}
+function inferEmailFormat(samples){
+  // samples: [{first_name, last_name, email}] at one domain
+  const counts = {}; let usable = 0;
+  for (const s of samples) {
+    const local = String(s.email || "").split("@")[0];
+    const hits = patternsFor(s.first_name, s.last_name, local);
+    if (!hits.length) continue;
+    usable++;
+    for (const h of hits) counts[h] = (counts[h] || 0) + 1 / hits.length;
+  }
+  const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  return {usable, ranked: ranked.map(([pattern, n]) => ({pattern, share: usable ? Math.round(n / usable * 100) : 0}))};
+}
+function buildEmail(pattern, first, last, domain){
+  const {f, l} = nameParts(first, last);
+  const p = EMAIL_PATTERNS.find(([n]) => n === pattern);
+  return p && f && l ? `${p[1](f, l)}@${domain}` : null;
 }
 
 /* ---------- Credits ---------- */
