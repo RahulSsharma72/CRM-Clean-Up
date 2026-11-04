@@ -17,10 +17,15 @@ Claude (`claude-opus-5-5`) reads the request and decides which Apollo calls to m
 | `find_person`: name / email / LinkedIn / company / website → one person | `POST /people/match` | 1 per match |
 | `search_people`: role + company → list of people (no contact data) | `POST /mixed_people/api_search` | free |
 | `enrich_people`: contact data for up to 10 people from a search | `POST /people/bulk_match` | 1 per person |
-| `find_company`: company name/website → domain & Apollo org id | `GET /organizations/enrich`, `POST /mixed_companies/search` | per Apollo plan |
+| `find_company`: company name → Apollo org id (website → full company details) | `POST /organizations/search` (fuzzy lookup), `GET /organizations/enrich` | name: free · domain: 1 |
 | `save_role_preset`: store a team-defined role in `roles.json` | — | — |
 
 Role presets such as "decision makers", "finance" and "operations" live in `roles.json`. Edit that file, or define and save roles from chat.
+
+## Two ways to run it in Slack
+
+1. **No code: Claude in Slack + the Apollo connector.** On a Claude Team or Enterprise plan, an owner can set up Claude in Slack. Each person who has added the Apollo connector to their own claude.ai account can then @mention Claude or DM it, e.g. "find the email and mobile for the CFO at acme.com". Claude uses that person's own Apollo access and asks them before first use. Other people in a channel can't use your Apollo connection. See https://claude.com/docs/claude-tag/overview.md.
+2. **This repo: a self-hosted bot.** It uses one shared Apollo API key for the whole team, so nobody needs their own connector. It also has role presets (`roles.json`) and a cap on credit use. The rest of this README covers this option.
 
 ## Setup
 

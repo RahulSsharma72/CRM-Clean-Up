@@ -162,3 +162,61 @@ def test_save_role_preset(tmp_path, monkeypatch):
     agent_mod.save_role("Deal Team", ["Managing Partner", "Principal"], ["partner"])
     assert agent_mod.load_roles()["deal team"]["titles"] == ["Managing Partner", "Principal"]
     assert "deal team" in agent_mod.build_system_prompt("slack", False)
+
+
+# Shapes captured from live Apollo responses (Nov 2026), identifying values altered.
+LIVE_SEARCH = {
+    "total_entries": 1,
+    "people": [
+        {
+            "id": "6681d647b5a36e00010d9e73",
+            "first_name": "Phil",
+            "last_name_obfuscated": "Mo***n",
+            "title": "CFO",
+            "has_email": True,
+            "has_direct_phone": "Yes",
+            "organization": {"name": "Apollo.io", "has_phone": True},
+        }
+    ],
+}
+LIVE_ORG_LOOKUP = {
+    "organizations": [
+        {"name": "Apollo.io", "domain": "apollo.io", "website_url": "http://www.apollo.io", "id": "5e66b6381e05b4008c8331b8"}
+    ]
+}
+
+
+def test_live_search_shape_keeps_masked_surname():
+    apollo, _ = make_apollo({"mixed_people/api_search": LIVE_SEARCH})
+    out = apollo.search_people(titles=["CFO"], company_domains=["apollo.io"])
+    person = out["people"][0]
+    assert person["name"] == "Phil Mo***n"
+    assert person["has_direct_phone"] == "Yes"
+    assert out["total_entries"] == 1
+
+
+def test_find_company_by_name_uses_free_lookup():
+    apollo, http = make_apollo({"organizations/search": LIVE_ORG_LOOKUP})
+    out = apollo.find_company(name="Apollo")
+    assert out["companies"][0] == {
+        "apollo_org_id": "5e66b6381e05b4008c8331b8",
+        "name": "Apollo.io",
+        "domain": "apollo.io",
+        "website": "http://www.apollo.io",
+    }
+    assert [c[1] for c in http.calls] == ["organizations/search"]
+
+
+def test_find_company_falls_back_to_paid_search():
+    class Failing(FakeHTTP):
+        def request(self, method, url, **kw):
+            if url.endswith("organizations/search"):
+                self.calls.append((method, "organizations/search", kw.get("json"), None, None))
+                return FakeResp({"error": "not found"}, status=404)
+            return super().request(method, url, **kw)
+
+    http = Failing({"mixed_companies/search": {"accounts": [{"organization_id": "o1", "name": "Acme", "domain": "acme.com"}]}})
+    apollo = ApolloClient("k", session=http, webhook_url="", reveal_personal_emails=False)
+    out = apollo.find_company(name="Acme")
+    assert out["companies"][0]["apollo_org_id"] == "o1"
+    assert out["companies"][0]["domain"] == "acme.com"

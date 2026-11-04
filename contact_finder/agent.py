@@ -95,6 +95,11 @@ TOOLS: list[dict[str, Any]] = [
                 "seniorities": {"type": "array", "items": {"type": "string", "enum": SENIORITIES}},
                 "locations": {"type": "array", "items": {"type": "string"}, "description": "e.g. ['New York, US']"},
                 "keywords": {"type": "string"},
+                "linkedin_urls": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Find specific people by LinkedIn profile URL (free).",
+                },
                 "limit": {"type": "integer", "minimum": 1, "maximum": 25, "description": "Default 10."},
             },
             "additionalProperties": False,
@@ -118,7 +123,11 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "find_company",
-        "description": "Resolve a company name or website to its Apollo organization (domain, id, phone, size).",
+        "description": (
+            "Resolve a company to its Apollo organization (id, domain, website). Looking up by name is free; "
+            "looking up by domain enriches the company and costs 1 credit, so only pass a domain when the user "
+            "wants company details (phone, size). Not needed before search_people if you already have a domain."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -176,11 +185,14 @@ How to work:
 - The user may give a name, company, website, LinkedIn URL, email or any other identifier. Pass every \
 identifier you have to find_person. If the user gives a website, pass it as company_domain.
 - If the user asks for a ROLE rather than a person (e.g. "who is the CFO at acme.com", "get me the \
-decision makers at Acme"), resolve the company with find_company if you only have a name, use \
+decision makers at Acme"), pass a website/domain straight to search_people; if you only have a company \
+name, resolve it with find_company(name=...) and use the returned organization id. Then use \
 search_people with the matching titles, then enrich_people for the best matches (at most \
 {MAX_ENRICH_PER_REQUEST}; prefer the most senior / most relevant). If the role matches a preset below, use \
 its titles and seniorities. If the user defines a new role in the conversation, use their definition; save \
 it with save_role_preset only if they ask you to save it.
+- Search results mask surnames (e.g. "Phil Mo***n"); enrichment reveals the full name. Don't present \
+masked names as final.
 - If a name-only lookup is ambiguous or finds nothing, ask for a company, website or LinkedIn URL rather \
 than guessing. Never invent contact details: report only what the tools return.
 - Report each person as: name, title, company, email (with email_status if not 'verified'), mobile phone, \

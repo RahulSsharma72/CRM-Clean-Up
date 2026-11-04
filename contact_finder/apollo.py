@@ -6,7 +6,7 @@ Only the endpoints the chatbot needs are wrapped:
 * Bulk People Enrichment POST /api/v1/people/bulk_match      (costs credits, max 10)
 * People API Search      POST /api/v1/mixed_people/api_search (no credits, no contact data)
 * Organization Enrich    GET  /api/v1/organizations/enrich
-* Organization Search    POST /api/v1/mixed_companies/search
+* Organization Lookup    POST /api/v1/organizations/search (fuzzy, free; paid search as fallback)
 
 Every public method returns plain dicts that have been trimmed down to the
 fields the chatbot cares about (see ``summarize_person``), so the model never
@@ -99,7 +99,9 @@ def summarize_person(p: dict[str, Any] | None) -> dict[str, Any] | None:
     return _clean(
         {
             "apollo_id": p.get("id"),
-            "name": p.get("name") or " ".join(filter(None, [p.get("first_name"), p.get("last_name")])),
+            # Search results mask the surname ("last_name_obfuscated": "Mo***n"); enrichment reveals it.
+            "name": p.get("name")
+            or " ".join(filter(None, [p.get("first_name"), p.get("last_name") or p.get("last_name_obfuscated")])),
             "title": p.get("title"),
             "headline": p.get("headline"),
             "seniority": p.get("seniority"),
@@ -121,7 +123,7 @@ def summarize_person(p: dict[str, Any] | None) -> dict[str, Any] | None:
             ),
             # Search results (no credits spent) only tell us whether data exists.
             "has_email": p.get("has_email"),
-            "has_direct_phone": p.get("has_direct_phone"),
+            "has_direct_phone": p.get("has_direct_phone"),  # "Yes" / "Maybe: ..." strings in search
         }
     )
 
@@ -133,7 +135,7 @@ def summarize_org(o: dict[str, Any] | None) -> dict[str, Any] | None:
         {
             "apollo_org_id": o.get("id"),
             "name": o.get("name"),
-            "domain": o.get("primary_domain"),
+            "domain": o.get("primary_domain") or o.get("domain"),
             "website": o.get("website_url"),
             "linkedin_url": o.get("linkedin_url"),
             "phone": (o.get("primary_phone") or {}).get("sanitized_number") or o.get("phone"),
@@ -256,6 +258,7 @@ class ApolloClient:
         seniorities: list[str] | None = None,
         locations: list[str] | None = None,
         keywords: str | None = None,
+        linkedin_urls: list[str] | None = None,
         include_similar_titles: bool = True,
         per_page: int = 10,
         page: int = 1,
@@ -270,6 +273,7 @@ class ApolloClient:
                 "person_seniorities": seniorities,
                 "person_locations": locations,
                 "q_keywords": keywords,
+                "person_linkedin_urls": [u for u in (normalize_linkedin_url(x) for x in linkedin_urls or []) if u],
                 "page": page,
                 "per_page": max(1, min(per_page, 25)),
             }
@@ -283,12 +287,24 @@ class ApolloClient:
 
     # ---------------------------------------------------------- organizations
     def find_company(self, *, domain: str | None = None, name: str | None = None) -> dict[str, Any]:
+        """Resolve a company. Name lookup uses the free fuzzy lookup; domain enrichment costs 1 credit."""
         domain = normalize_domain(domain)
         if domain:
             data = self._request("GET", "organizations/enrich", params={"domain": domain})
             return {"companies": [c for c in [summarize_org(data.get("organization"))] if c]}
         if not name:
             raise ValueError("Provide a company name or domain")
-        data = self._request("POST", "mixed_companies/search", json={"q_organization_name": name, "per_page": 5})
-        orgs = data.get("organizations") or data.get("accounts") or []
+        try:
+            # Free: shallow candidates (id, name, domain, website).
+            data = self._request(
+                "POST",
+                "organizations/search",
+                json={"q_organization_fuzzy_name": name, "display_mode": "fuzzy_select_mode", "per_page": 5},
+            )
+        except ApolloError as e:
+            log.info("Fuzzy organization lookup unavailable (%s); falling back to paid search", e)
+            data = self._request("POST", "mixed_companies/search", json={"q_organization_name": name, "per_page": 5})
+        orgs = data.get("organizations") or []
+        # Saved accounts carry the org id in organization_id, not id.
+        orgs += [{**a, "id": a.get("organization_id") or a.get("id")} for a in data.get("accounts") or []]
         return {"companies": [summarize_org(o) for o in orgs]}
