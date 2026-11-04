@@ -1,0 +1,367 @@
+<title>NB Contact Finder</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,500&display=swap">
+<style>
+/* Layout: one centred working column — header, chat log, composer pinned to the bottom. */
+:root{
+  --bg:#f6f4ee; --surface:#fffdf8; --ink:#16192b; --muted:#5d6278; --line:#dcd8cc;
+  --accent:#1f3fd1; --accent-ink:#ffffff; --accent-soft:#e3e8fb;
+  --ok:#17784a; --warn:#9a5a00; --err:#b3261e;
+  --display:"Newsreader",Georgia,"Times New Roman",serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#10121c; --surface:#181b29; --ink:#eceaf2; --muted:#a2a6bd; --line:#2c3047;
+  --accent:#8ea2ff; --accent-ink:#0e1230; --accent-soft:#232a52;
+  --ok:#5fd39b; --warn:#f0b35a; --err:#ff8a80; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#10121c; --surface:#181b29; --ink:#eceaf2; --muted:#a2a6bd; --line:#2c3047;
+  --accent:#8ea2ff; --accent-ink:#0e1230; --accent-soft:#232a52;
+  --ok:#5fd39b; --warn:#f0b35a; --err:#ff8a80; color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 var(--body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.app{max-width:760px;margin:0 auto;height:100%;display:flex;flex-direction:column}
+header{padding-block:20px 12px;display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+h1{font:500 28px/1.1 var(--display);margin:0;letter-spacing:-.01em;text-wrap:balance}
+h1 small{display:block;font:500 11px/1.4 var(--body);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+.credits{font:12px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+#log{flex:1;overflow-y:auto;padding-block:18px;display:flex;flex-direction:column;gap:16px;min-height:0}
+.msg{display:flex;flex-direction:column;gap:6px;min-width:0}
+.msg.user{align-items:flex-end}
+.bubble{max-width:100%;min-width:0;overflow-wrap:anywhere}
+.user .bubble{background:var(--accent);color:var(--accent-ink);padding:9px 14px;border-radius:14px 14px 4px 14px;max-width:85%}
+.bot .bubble{color:var(--ink)}
+.bot .bubble p{margin:0 0 8px}
+.bot .bubble ul{margin:0 0 8px;padding-left:20px}
+.bot .bubble strong{font-weight:600}
+.bot .bubble a{color:var(--accent)}
+.steps{display:flex;flex-direction:column;gap:2px;font:12px var(--mono);color:var(--muted)}
+.steps .done::before{content:"✓ ";color:var(--ok)}
+.steps .run::before{content:"… "}
+.steps .fail::before{content:"! ";color:var(--err)}
+.chip{font:13px var(--mono);background:var(--accent-soft);color:var(--ink);border:1px solid transparent;border-radius:6px;padding:1px 6px;cursor:pointer}
+.chip:hover,.chip:focus-visible{border-color:var(--accent);outline:none}
+.chip.copied{color:var(--ok)}
+.note{font-size:13px;color:var(--muted)}
+.note.err{color:var(--err)}
+.examples{display:flex;flex-direction:column;gap:10px;padding:18px;border:1px dashed var(--line);border-radius:10px;background:var(--surface)}
+.examples h2{font:500 18px var(--display);margin:0}
+.examples ul{margin:0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:8px}
+.ex{font:13px var(--body);background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:6px 12px;cursor:pointer;text-align:left}
+.ex:hover,.ex:focus-visible{border-color:var(--accent);outline:none}
+form{border-top:1px solid var(--line);padding-block:12px calc(14px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:8px}
+.row{display:flex;gap:8px;align-items:flex-end}
+textarea{flex:1;min-width:0;resize:none;font:15px/1.4 var(--body);color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;max-height:160px}
+textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+button.primary{font:600 14px var(--body);background:var(--accent);color:var(--accent-ink);border:0;border-radius:10px;padding:11px 16px;cursor:pointer}
+button.primary:disabled{opacity:.5;cursor:default}
+button.ghost{font:13px var(--body);background:none;border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:6px 10px;cursor:pointer}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.opts{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.opts label{display:flex;gap:6px;align-items:center;cursor:pointer}
+@media (prefers-reduced-motion:no-preference){.msg{animation:in .18s ease-out}@keyframes in{from{opacity:.4;transform:translateY(3px)}}}
+</style>
+
+<div class="app">
+  <header>
+    <h1><small>NB Group · Apollo</small>Contact Finder</h1>
+    <span class="credits" id="credits"></span>
+  </header>
+  <div id="log" aria-live="polite">
+    <section class="examples" id="examples">
+      <h2>Who are you looking for?</h2>
+      <p class="note" style="margin:0">Give a name with a company, website or LinkedIn URL, or ask for a role at a company. Answers include email, mobile and LinkedIn, pulled live from Apollo.</p>
+      <ul>
+        <li><button class="ex" type="button">Jane Doe at acme.com</button></li>
+        <li><button class="ex" type="button">linkedin.com/in/janedoe</button></li>
+        <li><button class="ex" type="button">Who is the CFO at acme.com?</button></li>
+        <li><button class="ex" type="button">Decision makers at Acme Dental Group</button></li>
+      </ul>
+      <p class="note" style="margin:0">These are examples; replace them with a real person or company.</p>
+    </section>
+  </div>
+  <form id="composer">
+    <div class="row">
+      <label for="q" class="sr" hidden>Message</label>
+      <textarea id="q" rows="1" placeholder="Name + company, website, LinkedIn URL, or a role…"></textarea>
+      <button class="primary" id="send" type="submit">Find</button>
+      <button class="ghost" id="stop" type="button" hidden>Stop</button>
+    </div>
+    <div class="opts">
+      <label><input type="checkbox" id="mobile"> Include mobile numbers (uses phone credits)</label>
+      <button class="ghost" id="reset" type="button">New search</button>
+    </div>
+    <p class="note err" id="banner" hidden></p>
+  </form>
+</div>
+
+<script>
+const APOLLO = "Apollo.io";
+const ROLE_PRESETS = {
+  "decision makers": {titles:["Owner","Founder","Co-Founder","CEO","President","Managing Partner","Managing Director","Principal"],seniorities:["owner","founder","c_suite","partner"]},
+  "finance": {titles:["CFO","Chief Financial Officer","VP Finance","Controller","Head of Finance","Finance Director"]},
+  "operations": {titles:["COO","Chief Operating Officer","VP Operations","Director of Operations","Head of Operations"]},
+  "sales": {titles:["CRO","Chief Revenue Officer","VP Sales","Head of Sales","Sales Director"]},
+  "marketing": {titles:["CMO","Chief Marketing Officer","VP Marketing","Head of Marketing","Marketing Director"]},
+  "hr": {titles:["CHRO","Chief People Officer","VP Human Resources","Head of HR","HR Director"]},
+  "corporate development": {titles:["VP Corporate Development","Head of Corporate Development","Director of M&A","Head of M&A"]}
+};
+const MAX_ENRICH = 10;
+
+const $ = id => document.getElementById(id);
+const log = $("log"), q = $("q"), sendBtn = $("send"), stopBtn = $("stop"), banner = $("banner");
+let sample = null, mcp = null, turns = [], ctl = null, enrichedThisChat = {};
+
+function instructions(){
+  return `You are Contact Finder, an assistant for NB Group's deal team. You find a person's work email, mobile/direct phone and LinkedIn URL using Apollo through the tools provided.
+
+Rules:
+- The user may give a name, company, website, LinkedIn URL, email or anything else. Pass every identifier you have to enrich_person. A name alone is weak: if a name-only lookup finds nothing or could be several people, ask for a company, website or LinkedIn URL.
+- For a ROLE ("CFO at acme.com", "decision makers at Acme"): if you have a website/domain, call search_people with it directly; if you only have a company name, call lookup_company first and use the organization id. Then call enrich_people with the ids of the best matches (most relevant and senior first, at most ${MAX_ENRICH}).
+- Role presets (use these titles when the user names one): ${JSON.stringify(ROLE_PRESETS)}. If the user defines their own role, use their definition for the rest of the chat.
+- search_people and lookup_company are free. enrich_person and enrich_people spend 1 Apollo credit per person found. Never enrich the same person twice in a chat; earlier results are listed in the notes on previous turns.
+- Mobile numbers: ${$("mobile").checked ? "the user turned mobile numbers ON, so set mobile=true on enrichment calls." : "the user turned mobile numbers OFF; do not set mobile=true. If they ask for a phone, report any phone Apollo returned and tell them to tick 'Include mobile numbers'."}
+- Search results mask surnames (e.g. "Phil Mo***n"); enrichment reveals them. Never present a masked name as final.
+- Never invent contact details. Report only what the tools returned; write "not found" for missing fields.
+
+Answer format (plain text, light Markdown only: **bold**, bullet lists, links):
+For each person: **Name**, title, company, then bullets for Email (add the email status if not verified), Mobile, Other phones, LinkedIn. Keep it short; no preamble.`;
+}
+
+/* ---------- Apollo via the viewer's connector ---------- */
+const MCP_FIX = {
+  server_not_connected: "Add the Apollo.io connector in claude.ai Settings → Connectors, then try again.",
+  needs_reauth: "Reconnect Apollo.io in claude.ai Settings → Connectors, then try again.",
+  selection_required: "Choose which Apollo.io connection to use in the prompt claude.ai showed, then try again.",
+  not_in_manifest: "Apollo access is turned off for this page. Turn it on from the page's Permissions menu.",
+  approval_required: "This page needs your approval to use Apollo. Send the message again and choose Allow.",
+  blocked_by_policy: "Your organization's policy blocks this Apollo tool.",
+  not_granted: "This view can't use connectors.", capability_disabled: "This view can't use connectors."
+};
+async function apollo(tool, input, signal){
+  if (!mcp) throw new Error("Apollo isn't available in this view.");
+  try {
+    const r = await mcp.callTool(APOLLO, tool, {...input, _conversation_ref: convRef, _rationale: "Contact lookup requested in the NB Contact Finder page."}, {cache:false, signal});
+    return r.payload ?? r;
+  } catch (e) {
+    if (e && MCP_FIX[e.code]) { showBanner(MCP_FIX[e.code]); throw new Error(MCP_FIX[e.code]); }
+    if (e && e.code === "server_unavailable") throw new Error("Apollo didn't respond. Try again in a moment.");
+    throw new Error(e?.message || "Apollo returned an error.");
+  }
+}
+const convRef = Math.random().toString(36).slice(2, 12);
+
+const pick = (o, keys) => { const out = {}; for (const k of keys) if (o && o[k] != null && o[k] !== "" && !(Array.isArray(o[k]) && !o[k].length)) out[k] = o[k]; return out; };
+function slimPerson(p){
+  if (!p || typeof p !== "object") return p;
+  const org = p.organization || {};
+  return {
+    ...pick(p, ["id","name","first_name","last_name","last_name_obfuscated","title","headline","email","email_status","personal_emails","linkedin_url","city","state","country","phone_numbers","sanitized_phone","has_email","has_direct_phone"]),
+    company: pick(org, ["name","primary_domain","domain","website_url","phone"])
+  };
+}
+function clip(data){ const s = JSON.stringify(data); return s.length > 30000 ? s.slice(0, 30000) + "…(truncated)" : s; }
+
+async function pollPhones(requestId, signal, step){
+  for (let i = 0; i < 6; i++) {
+    await new Promise(r => setTimeout(r, 10000));
+    if (signal.aborted) return {status: "cancelled"};
+    step.textContent = `Waiting for mobile numbers from Apollo (${(i + 1) * 10}s)`;
+    try {
+      const res = await apollo("apollo_webhook_result_show", {request_id: String(requestId)}, signal);
+      if (res && (res.status === "success" || res.status === "failed")) return res;
+    } catch (e) {
+      if (!/pending|404|not.?ready/i.test(e.message)) return {status: "error", message: e.message};
+    }
+  }
+  return {status: "still_processing", request_id: String(requestId), note: "Apollo is still working on the mobile number. It can be checked again later with this request_id."};
+}
+
+function makeTools(addStep){
+  const mobileOn = $("mobile").checked;
+  return [
+    {
+      name: "enrich_person",
+      description: "Look up ONE person in Apollo and return work email, phones and LinkedIn. Pass every identifier you have. Costs 1 credit if found.",
+      inputSchema: {type:"object", properties:{
+        name:{type:"string"}, first_name:{type:"string"}, last_name:{type:"string"}, email:{type:"string"},
+        organization_name:{type:"string"}, domain:{type:"string", description:"Company website or domain"},
+        linkedin_url:{type:"string"}, id:{type:"string", description:"Apollo person id from search_people"},
+        mobile:{type:"boolean", description:"Also reveal mobile numbers (only when mobile numbers are ON)"}}},
+      async execute(input, {signal}){
+        const args = pick(input, ["name","first_name","last_name","email","organization_name","linkedin_url","id"]);
+        if (input.domain) args.domain = String(input.domain).replace(/^https?:\/\//,"").replace(/^www\./,"").split("/")[0];
+        if (!Object.keys(args).length) throw new Error("Need at least one identifier.");
+        const label = args.name || [args.first_name, args.last_name].filter(Boolean).join(" ") || args.linkedin_url || args.email || "person";
+        if (args.id && enrichedThisChat[args.id]) return enrichedThisChat[args.id];
+        const step = addStep(`Looking up ${label} in Apollo`);
+        const wantPhone = mobileOn && input.mobile !== false;
+        const res = await apollo("apollo_people_match", {...args, reveal_phone_number: wantPhone}, signal);
+        const person = slimPerson(res.person || res);
+        const out = {person};
+        if (wantPhone && res.request_id) out.mobile_lookup = await pollPhones(res.request_id, signal, step);
+        if (person?.id) enrichedThisChat[person.id] = out;
+        step.className = "done"; step.textContent = `Looked up ${person?.name || label}`;
+        refreshCredits();
+        return clip(out);
+      }
+    },
+    {
+      name: "search_people",
+      description: "Find people by role at a company. Free. Returns Apollo ids, names (surname masked), titles; no emails or phones. Needs company_domains or organization_ids.",
+      inputSchema: {type:"object", properties:{
+        titles:{type:"array", items:{type:"string"}}, seniorities:{type:"array", items:{type:"string"}},
+        company_domains:{type:"array", items:{type:"string"}}, organization_ids:{type:"array", items:{type:"string"}},
+        locations:{type:"array", items:{type:"string"}}, limit:{type:"integer"}}},
+      async execute(input, {signal}){
+        const args = {per_page: Math.min(Math.max(Number(input.limit) || 10, 1), 25)};
+        if (input.titles?.length) args.person_titles = input.titles.map(String);
+        if (input.seniorities?.length) args.person_seniorities = input.seniorities.map(String);
+        if (input.company_domains?.length) args.q_organization_domains_list = input.company_domains.map(d => String(d).replace(/^https?:\/\//,"").replace(/^www\./,"").split("/")[0]);
+        if (input.organization_ids?.length) args.organization_ids = input.organization_ids.map(String);
+        if (input.locations?.length) args.person_locations = input.locations.map(String);
+        if (!args.q_organization_domains_list && !args.organization_ids) throw new Error("Give a company domain or organization id (use lookup_company for a name).");
+        const step = addStep(`Searching for ${(input.titles || ["people"]).slice(0,3).join(", ")}`);
+        const res = await apollo("apollo_mixed_people_api_search", args, signal);
+        step.className = "done"; step.textContent = `Found ${res.total_entries ?? (res.people || []).length} matching people`;
+        return clip({total_entries: res.total_entries, people: (res.people || []).map(slimPerson)});
+      }
+    },
+    {
+      name: "enrich_people",
+      description: `Get email, phones and LinkedIn for up to ${MAX_ENRICH} people by Apollo id (from search_people). Costs 1 credit per person found.`,
+      inputSchema: {type:"object", properties:{ids:{type:"array", items:{type:"string"}}, mobile:{type:"boolean"}}, required:["ids"]},
+      async execute(input, {signal}){
+        const ids = [...new Set((input.ids || []).map(String))];
+        const fresh = ids.filter(i => !enrichedThisChat[i]).slice(0, MAX_ENRICH);
+        const out = {matches: ids.filter(i => enrichedThisChat[i]).map(i => enrichedThisChat[i].person)};
+        if (fresh.length) {
+          const step = addStep(`Looking up ${fresh.length} ${fresh.length === 1 ? "person" : "people"} in Apollo`);
+          const wantPhone = mobileOn && input.mobile !== false;
+          const res = await apollo("apollo_people_bulk_match", {details: fresh.map(id => ({id})), reveal_phone_number: wantPhone}, signal);
+          const matches = (res.matches || []).filter(Boolean).map(slimPerson);
+          for (const m of matches) if (m.id) enrichedThisChat[m.id] = {person: m};
+          out.matches.push(...matches);
+          if (wantPhone && res.request_id) out.mobile_lookup = await pollPhones(res.request_id, signal, step);
+          step.className = "done"; step.textContent = `Looked up ${matches.length} ${matches.length === 1 ? "person" : "people"}`;
+          refreshCredits();
+        }
+        if (ids.length - (ids.length - fresh.length) > MAX_ENRICH) out.skipped_over_limit = true;
+        return clip(out);
+      }
+    },
+    {
+      name: "lookup_company",
+      description: "Resolve a company name to Apollo organization candidates (id, name, domain, website). Free.",
+      inputSchema: {type:"object", properties:{name:{type:"string"}}, required:["name"]},
+      async execute(input, {signal}){
+        const step = addStep(`Finding company "${String(input.name)}"`);
+        const res = await apollo("apollo_organizations_lookup", {q_organization_fuzzy_name: String(input.name), per_page: 5}, signal);
+        step.className = "done"; step.textContent = `Found ${(res.organizations || []).length} company matches`;
+        return clip({organizations: (res.organizations || []).map(o => pick(o, ["id","name","domain","website_url"]))});
+      }
+    }
+  ];
+}
+
+/* ---------- Credits ---------- */
+async function refreshCredits(){
+  try {
+    const p = await apollo("apollo_users_api_profile", {include_credit_usage: true});
+    if (p && p.num_credits_remaining != null) $("credits").textContent = `${Number(p.num_credits_remaining).toLocaleString()} Apollo credits left`;
+  } catch { /* the banner already explains connector problems */ }
+}
+
+/* ---------- Rendering ---------- */
+function esc(s){ return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function inline(s){
+  s = esc(s);
+  s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  s = s.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+  s = s.replace(/(^|[\s(:])([\w.+-]+@[\w-]+\.[\w.-]+\w)/g, '$1<button type="button" class="chip" data-copy="$2" title="Copy">$2</button>');
+  s = s.replace(/(^|[\s(:])(\+?\d[\d ().-]{7,}\d)/g, '$1<button type="button" class="chip" data-copy="$2" title="Copy">$2</button>');
+  return s;
+}
+function md(text){
+  const out = []; let list = null;
+  for (const raw of text.split("\n")) {
+    const line = raw.trimEnd();
+    const m = line.match(/^\s*[-*•]\s+(.*)$/);
+    if (m) { if (!list) { list = []; } list.push(`<li>${inline(m[1])}</li>`); continue; }
+    if (list) { out.push(`<ul>${list.join("")}</ul>`); list = null; }
+    if (line.trim()) out.push(`<p>${inline(line.replace(/^#+\s*/, ""))}</p>`);
+  }
+  if (list) out.push(`<ul>${list.join("")}</ul>`);
+  return out.join("");
+}
+log.addEventListener("click", async e => {
+  const chip = e.target.closest(".chip");
+  if (chip) {
+    try { await navigator.clipboard.writeText(chip.dataset.copy); chip.classList.add("copied"); chip.title = "Copied"; setTimeout(() => chip.classList.remove("copied"), 1200); }
+    catch { const r = document.createRange(); r.selectNodeContents(chip); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+  }
+  const ex = e.target.closest(".ex");
+  if (ex) { q.value = ex.textContent; q.focus(); }
+});
+function addMsg(role){
+  const el = document.createElement("div"); el.className = "msg " + role;
+  el.innerHTML = role === "bot" ? '<div class="steps"></div><div class="bubble"></div>' : '<div class="bubble"></div>';
+  log.append(el); log.scrollTop = log.scrollHeight; return el;
+}
+function showBanner(t){ banner.textContent = t; banner.hidden = false; }
+
+/* ---------- Chat ---------- */
+const SAMPLE_FIX = {
+  not_granted: "This page isn't allowed to use Claude for you. Allow it from the page's Permissions menu.",
+  sampling_disabled: "Claude isn't available on this account.",
+  rate_limited: "You've hit a usage limit. Wait a bit, then try again.",
+  session_expired: "Sign in to claude.ai again, then try again.",
+  tools_unavailable: "This Claude view can't run lookups. Open the page in claude.ai.",
+  refused: "Claude declined that request. Try rephrasing it.",
+  prompt_too_large: "This chat is too long. Start a new search."
+};
+async function send(text){
+  if (!sample) { showBanner("Claude isn't available in this view. Open the page in claude.ai."); return; }
+  $("examples")?.remove(); banner.hidden = true;
+  addMsg("user").querySelector(".bubble").textContent = text;
+  const bot = addMsg("bot"), steps = bot.querySelector(".steps"), bubble = bot.querySelector(".bubble");
+  bubble.innerHTML = '<p class="note">Thinking…</p>';
+  const addStep = t => { const s = document.createElement("div"); s.className = "run"; s.textContent = t; steps.append(s); log.scrollTop = log.scrollHeight; return s; };
+  turns.push({role: "user", content: text});
+  const recent = turns.slice(-16); if (recent[0].role !== "user") recent.shift();
+  ctl = new AbortController(); sendBtn.disabled = true; stopBtn.hidden = false;
+  try {
+    const {text: answer, truncated} = await sample([{role: "user", content: instructions()}, ...recent], {
+      tools: makeTools(addStep), signal: ctl.signal,
+      onText: ({text}) => { bubble.innerHTML = md(text); log.scrollTop = log.scrollHeight; }
+    });
+    bubble.innerHTML = md(answer) + (truncated ? '<p class="note">The answer was cut short. Ask about fewer people at a time.</p>' : "");
+    const known = Object.values(enrichedThisChat).map(v => v.person && pick(v.person, ["id","name","email","linkedin_url"]));
+    turns.push({role: "assistant", content: answer + (known.length ? `\n\n[Notes for later turns, not shown to the user. Already looked up: ${JSON.stringify(known)}]` : "")});
+  } catch (e) {
+    turns.pop();
+    for (const s of steps.querySelectorAll(".run")) s.className = "fail";
+    if (e.code === "cancelled") bubble.innerHTML = e.text ? md(e.text) + '<p class="note">Stopped.</p>' : '<p class="note">Stopped.</p>';
+    else bubble.innerHTML = (e.text && e.code !== "refused" ? md(e.text) : "") + `<p class="note err">${esc(SAMPLE_FIX[e.code] || "Something went wrong reaching Claude. Try again.")}</p>`;
+  } finally {
+    sendBtn.disabled = false; stopBtn.hidden = true; ctl = null; log.scrollTop = log.scrollHeight;
+  }
+}
+$("composer").addEventListener("submit", e => { e.preventDefault(); const t = q.value.trim(); if (!t || ctl) return; q.value = ""; q.style.height = ""; send(t); });
+q.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("composer").requestSubmit(); } });
+q.addEventListener("input", () => { q.style.height = "auto"; q.style.height = Math.min(q.scrollHeight, 160) + "px"; });
+stopBtn.addEventListener("click", () => ctl?.abort());
+$("reset").addEventListener("click", () => { if (ctl) ctl.abort(); turns = []; enrichedThisChat = {}; log.innerHTML = ""; banner.hidden = true; q.focus(); });
+try { $("mobile").checked = localStorage.getItem("cf-mobile") === "1"; } catch {}
+$("mobile").addEventListener("change", () => { try { localStorage.setItem("cf-mobile", $("mobile").checked ? "1" : "0"); } catch {} });
+
+(async () => {
+  [sample, mcp] = await Promise.all([claude.use("sample").catch(() => null), claude.use("mcp").catch(() => null)]);
+  if (!sample) showBanner("Claude isn't available in this view. Open the page in claude.ai.");
+  else if (!mcp) showBanner("Apollo isn't available in this view. Open the page in claude.ai with the Apollo.io connector added.");
+})();
+</script>
