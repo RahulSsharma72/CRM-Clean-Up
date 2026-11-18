@@ -1,4 +1,4 @@
-<title>NB Contact Finder</title>
+<title>Contact Finder Bot</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,500&display=swap">
@@ -62,14 +62,33 @@ button.ghost{font:13px var(--body);background:none;border:1px solid var(--line);
 button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .opts{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--muted)}
 .opts label{display:flex;gap:6px;align-items:center;cursor:pointer}
+.head-right{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#history{border-bottom:1px solid var(--line);padding-block:10px;display:flex;flex-direction:column;gap:6px;max-height:40vh;overflow-y:auto}
+#history h2{font:500 11px/1.4 var(--body);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0}
+#history ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+#history li{display:flex;gap:8px;align-items:center;min-width:0}
+.hist-open{flex:1;min-width:0;text-align:left;background:none;border:1px solid transparent;border-radius:8px;padding:6px 8px;color:var(--ink);font:14px var(--body);cursor:pointer;display:flex;gap:10px;align-items:baseline}
+.hist-open:hover,.hist-open:focus-visible,.hist-open[aria-current="true"]{background:var(--surface);border-color:var(--line);outline:none}
+.hist-title{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hist-date{font:12px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.hist-del{background:none;border:0;color:var(--muted);font:13px var(--body);cursor:pointer;padding:6px}
+.hist-del:hover,.hist-del:focus-visible{color:var(--err)}
 @media (prefers-reduced-motion:no-preference){.msg{animation:in .18s ease-out}@keyframes in{from{opacity:.4;transform:translateY(3px)}}}
 </style>
 
 <div class="app">
   <header>
     <h1><small>NB Group · Apollo</small>Contact Finder</h1>
-    <span class="credits" id="credits"></span>
+    <div class="head-right">
+      <span class="credits" id="credits"></span>
+      <button class="ghost" id="histBtn" type="button" aria-expanded="false" aria-controls="history">Past searches</button>
+    </div>
   </header>
+  <section id="history" hidden>
+    <h2>Past searches</h2>
+    <p class="note" id="histNote" style="margin:0">Loading your saved searches…</p>
+    <ul id="histList"></ul>
+  </section>
   <div id="log" aria-live="polite">
     <section class="examples" id="examples">
       <h2>Who are you looking for?</h2>
@@ -114,6 +133,7 @@ const MAX_ENRICH = 10;
 const $ = id => document.getElementById(id);
 const log = $("log"), q = $("q"), sendBtn = $("send"), stopBtn = $("stop"), banner = $("banner");
 let sample = null, mcp = null, turns = [], ctl = null, enrichedThisChat = {};
+let chatId = null, chatCreated = null, view = [];  // view: what the log shows, for restoring a chat
 
 function instructions(){
   return `You are Contact Finder, an assistant for NB Group's deal team. You find a person's work email, mobile/direct phone and LinkedIn URL using Apollo through the tools provided.
@@ -439,7 +459,9 @@ const SAMPLE_FIX = {
 async function send(text){
   if (!sample) { showBanner("Claude isn't available in this view. Open the page in claude.ai."); return; }
   $("examples")?.remove(); banner.hidden = true;
+  if (!chatId) { chatId = "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); chatCreated = Date.now(); }
   addMsg("user").querySelector(".bubble").textContent = text;
+  view.push({role: "user", text});
   const bot = addMsg("bot"), steps = bot.querySelector(".steps"), bubble = bot.querySelector(".bubble");
   bubble.innerHTML = '<p class="note">Thinking…</p>';
   const addStep = t => { const s = document.createElement("div"); s.className = "run"; s.textContent = t; steps.append(s); log.scrollTop = log.scrollHeight; return s; };
@@ -454,22 +476,177 @@ async function send(text){
     bubble.innerHTML = md(answer) + (truncated ? '<p class="note">The answer was cut short. Ask about fewer people at a time.</p>' : "");
     const known = Object.values(enrichedThisChat).map(v => v.person && pick(v.person, ["id","name","email","linkedin_url"]));
     turns.push({role: "assistant", content: answer + (known.length ? `\n\n[Notes for later turns, not shown to the user. Already looked up: ${JSON.stringify(known)}]` : "")});
+    view.push({role: "bot", text: answer, steps: stepsOf(steps)});
   } catch (e) {
     turns.pop();
     for (const s of steps.querySelectorAll(".run")) s.className = "fail";
     if (e.code === "cancelled") bubble.innerHTML = e.text ? md(e.text) + '<p class="note">Stopped.</p>' : '<p class="note">Stopped.</p>';
     else bubble.innerHTML = (e.text && e.code !== "refused" ? md(e.text) : "") + `<p class="note err">${esc(SAMPLE_FIX[e.code] || "Something went wrong reaching Claude. Try again.")}</p>`;
+    view.push({role: "bot", text: e.code === "refused" ? "" : (e.text || ""), steps: stepsOf(steps), note: e.code === "cancelled" ? "Stopped." : "This answer didn't finish."});
   } finally {
     sendBtn.disabled = false; stopBtn.hidden = true; ctl = null; log.scrollTop = log.scrollHeight;
+    saveChat();
   }
 }
 $("composer").addEventListener("submit", e => { e.preventDefault(); const t = q.value.trim(); if (!t || ctl) return; q.value = ""; q.style.height = ""; send(t); });
 q.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("composer").requestSubmit(); } });
 q.addEventListener("input", () => { q.style.height = "auto"; q.style.height = Math.min(q.scrollHeight, 160) + "px"; });
 stopBtn.addEventListener("click", () => ctl?.abort());
-$("reset").addEventListener("click", () => { if (ctl) ctl.abort(); turns = []; enrichedThisChat = {}; log.innerHTML = ""; banner.hidden = true; q.focus(); });
+$("reset").addEventListener("click", () => { if (ctl) ctl.abort(); startNewChat(); q.focus(); });
 try { $("mobile").checked = localStorage.getItem("cf-mobile") === "1"; } catch {}
 $("mobile").addEventListener("change", () => { try { localStorage.setItem("cf-mobile", $("mobile").checked ? "1" : "0"); } catch {} });
+
+/* ---------- Saved chats ----------
+   Each person's chats are private to them: stored under data/users/<their id>/ in this page's
+   store (kept across closing, reloads and devices). Where that isn't available (signed out, or
+   view-only access), chats are kept in this browser instead. */
+const MAX_CHATS = 50, LOCAL_KEY = "cf-chats-v1", LAST_KEY = "cf-last-chat";
+let store = null, chats = [], histUnsub = null;
+
+function stepsOf(stepsEl){ return [...stepsEl.children].map(el => ({cls: el.className === "run" ? "fail" : el.className, text: el.textContent})); }
+function titleOf(v){ const first = v.find(x => x.role === "user"); return first ? first.text.slice(0, 80) : "Untitled search"; }
+function chatRecord(){
+  let rec = {title: titleOf(view), createdAt: chatCreated, updatedAt: Date.now(), turns: turns.slice(-40), view: view.slice(-60), enriched: enrichedThisChat};
+  // Stay well under the 256 KiB document limit: drop the oldest exchanges first.
+  while (JSON.stringify(rec).length > 200000 && rec.view.length > 2) rec = {...rec, view: rec.view.slice(2), turns: rec.turns.slice(2)};
+  if (JSON.stringify(rec).length > 200000) rec.enriched = {};
+  return rec;
+}
+
+const localStore = {
+  kind: "browser",
+  read(){ try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || "{}"); } catch { return {}; } },
+  write(all){ try { localStorage.setItem(LOCAL_KEY, JSON.stringify(all)); return true; } catch { return false; } },
+  subscribe(cb){ const all = this.read(); cb(Object.entries(all).map(([id, c]) => ({id, ...c}))); return () => {}; },
+  async save(id, rec){
+    const all = this.read(); all[id] = rec;
+    const ids = Object.keys(all).sort((a, b) => (all[b].updatedAt || 0) - (all[a].updatedAt || 0));
+    for (const old of ids.slice(MAX_CHATS)) delete all[old];
+    if (!this.write(all)) throw new Error("browser storage unavailable");
+    renderHistory(Object.entries(all).map(([cid, c]) => ({id: cid, ...c})));
+  },
+  async load(id){ return this.read()[id] || null; },
+  async remove(id){ const all = this.read(); delete all[id]; this.write(all); renderHistory(Object.entries(all).map(([cid, c]) => ({id: cid, ...c}))); }
+};
+
+function dbStore(db, uid){
+  const col = db.collection("data/users/" + uid);
+  return {
+    kind: "account",
+    subscribe(cb, onErr){
+      return col.orderBy("updatedAt", "desc").limit(MAX_CHATS).onSnapshot(snap => cb(snap.docs.map(d => ({id: d.id, ...d.data()})), snap.metadata), onErr);
+    },
+    async save(id, rec){ await col.doc(id).set(rec); },
+    async load(id){ const d = await col.doc(id).get(); return d.exists ? d.data() : null; },
+    async remove(id){ await col.doc(id).delete(); }
+  };
+}
+
+let saveChain = Promise.resolve();
+function saveChat(){
+  if (!chatId || !view.length || !store) return;
+  const id = chatId, rec = chatRecord();
+  try { localStorage.setItem(LAST_KEY, id); } catch {}
+  saveChain = saveChain.then(() => store.save(id, rec)).catch(async e => {
+    if (store.kind === "account") {
+      // No permission to save to the account (view-only access) or the store is down: keep it in this browser.
+      store = localStore;
+      $("histNote").textContent = "Your access to this page doesn't allow saving to your account, so searches are kept in this browser only.";
+      $("histNote").hidden = false;
+      try { await localStore.save(id, rec); } catch {}
+    }
+  });
+}
+
+function fmtDate(ms){
+  if (!ms) return "";
+  const d = new Date(ms), now = new Date();
+  return d.toDateString() === now.toDateString() ? d.toLocaleTimeString([], {hour: "numeric", minute: "2-digit"}) : d.toLocaleDateString([], {month: "short", day: "numeric"});
+}
+function renderHistory(list){
+  chats = list.filter(c => c && c.view && c.view.length).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  const ul = $("histList"); ul.innerHTML = "";
+  for (const c of chats) {
+    const li = document.createElement("li");
+    const open = document.createElement("button"); open.type = "button"; open.className = "hist-open"; open.dataset.id = c.id;
+    open.setAttribute("aria-current", String(c.id === chatId));
+    const t = document.createElement("span"); t.className = "hist-title"; t.textContent = c.title || "Untitled search";
+    const d = document.createElement("span"); d.className = "hist-date"; d.textContent = fmtDate(c.updatedAt);
+    open.append(t, d);
+    const del = document.createElement("button"); del.type = "button"; del.className = "hist-del"; del.dataset.del = c.id; del.textContent = "Delete";
+    del.setAttribute("aria-label", "Delete " + (c.title || "search"));
+    li.append(open, del); ul.append(li);
+  }
+  const note = $("histNote");
+  if (!chats.length) { note.textContent = "No saved searches yet. Each search you run is saved here automatically."; note.hidden = false; }
+  else if (store?.kind === "account") note.hidden = true;
+}
+
+function renderView(){
+  log.innerHTML = "";
+  for (const v of view) {
+    if (v.role === "user") { addMsg("user").querySelector(".bubble").textContent = v.text; continue; }
+    const el = addMsg("bot"), stepsEl = el.querySelector(".steps");
+    for (const st of v.steps || []) { const s = document.createElement("div"); s.className = st.cls; s.textContent = st.text; stepsEl.append(s); }
+    el.querySelector(".bubble").innerHTML = (v.text ? md(v.text) : "") + (v.note ? `<p class="note">${esc(v.note)}</p>` : "");
+  }
+  log.scrollTop = log.scrollHeight;
+}
+function startNewChat(){
+  turns = []; enrichedThisChat = {}; view = []; chatId = null; chatCreated = null;
+  log.innerHTML = ""; banner.hidden = true;
+  try { localStorage.removeItem(LAST_KEY); } catch {}
+  renderHistory(chats);
+}
+async function openChat(id){
+  if (ctl) return;
+  let rec = chats.find(c => c.id === id) || null;
+  if (!rec && store) { try { rec = await store.load(id); } catch {} }
+  if (!rec) return;
+  chatId = id; chatCreated = rec.createdAt || Date.now();
+  turns = Array.isArray(rec.turns) ? rec.turns.map(t => ({role: t.role, content: t.content})) : [];
+  view = Array.isArray(rec.view) ? rec.view.map(v => ({...v})) : [];
+  enrichedThisChat = rec.enriched && typeof rec.enriched === "object" ? JSON.parse(JSON.stringify(rec.enriched)) : {};
+  banner.hidden = true; renderView(); renderHistory(chats);
+  try { localStorage.setItem(LAST_KEY, id); } catch {}
+}
+
+$("histBtn").addEventListener("click", () => {
+  const h = $("history"); h.hidden = !h.hidden; $("histBtn").setAttribute("aria-expanded", String(!h.hidden));
+});
+$("histList").addEventListener("click", async e => {
+  const open = e.target.closest(".hist-open");
+  if (open) { await openChat(open.dataset.id); $("history").hidden = true; $("histBtn").setAttribute("aria-expanded", "false"); q.focus(); return; }
+  const del = e.target.closest(".hist-del");
+  if (del) {
+    if (del.dataset.confirm !== "1") { del.dataset.confirm = "1"; del.textContent = "Confirm delete"; setTimeout(() => { del.dataset.confirm = ""; del.textContent = "Delete"; }, 4000); return; }
+    const id = del.dataset.del;
+    try { await store?.remove(id); } catch { $("histNote").textContent = "Couldn't delete that search. Try again."; $("histNote").hidden = false; return; }
+    chats = chats.filter(c => c.id !== id); renderHistory(chats);
+    if (id === chatId) startNewChat();
+  }
+});
+
+async function initHistory(){
+  let lastId = null; try { lastId = localStorage.getItem(LAST_KEY); } catch {}
+  const [db, user] = await Promise.all([claude.use("db").catch(() => null), claude.use("user").catch(() => null)]);
+  const uid = user ? await user.id().catch(() => null) : null;
+  const canWrite = user ? await Promise.resolve(user.can?.("data.write")).catch(() => null) : null;
+  store = db && uid && canWrite !== false ? dbStore(db, uid) : localStore;
+  if (store.kind === "browser") { $("histNote").textContent = "Searches are saved in this browser only."; $("histNote").hidden = false; }
+  let restored = false;
+  const timer = setTimeout(() => { if (store.kind === "account" && !chats.length) { $("histNote").textContent = "Can't reach your saved searches yet. They'll appear when the connection is back."; $("histNote").hidden = false; } }, 10000);
+  histUnsub = store.subscribe((list, meta) => {
+    if (!meta || !meta.fromCache) clearTimeout(timer);
+    renderHistory(list);
+    if (!restored && lastId && !chatId && !view.length && chats.some(c => c.id === lastId)) { restored = true; openChat(lastId); $("examples")?.remove(); }
+  }, err => {
+    clearTimeout(timer);
+    store = localStore; localStore.subscribe(renderHistory);
+    $("histNote").textContent = "Your saved searches can't be reached right now, so new searches are kept in this browser."; $("histNote").hidden = false;
+  });
+}
+initHistory();
 
 (async () => {
   [sample, mcp] = await Promise.all([claude.use("sample").catch(() => null), claude.use("mcp").catch(() => null)]);
