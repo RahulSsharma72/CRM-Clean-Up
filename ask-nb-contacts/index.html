@@ -73,6 +73,34 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .hist-date{font:12px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .hist-del{background:none;border:0;color:var(--muted);font:13px var(--body);cursor:pointer;padding:6px}
 .hist-del:hover,.hist-del:focus-visible{color:var(--err)}
+.tabs{display:flex;gap:4px;border:1px solid var(--line);border-radius:10px;padding:3px;background:var(--surface)}
+.tab{font:500 13px var(--body);background:none;border:0;color:var(--muted);padding:6px 12px;border-radius:7px;cursor:pointer}
+.tab[aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}
+#chatView{flex:1;min-height:0;display:flex;flex-direction:column}
+#bulk{flex:1;min-height:0;overflow-y:auto;padding-block:18px;display:flex;flex-direction:column;gap:18px}
+.panel{display:flex;flex-direction:column;gap:12px;padding:18px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.panel h2{font:500 20px var(--display);margin:0}
+.panel h3{font:500 11px/1.4 var(--body);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0}
+.drop{border:1.5px dashed var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop input[type=file]{font:13px var(--body);color:var(--muted);max-width:100%}
+#bulkPaste{width:100%;box-sizing:border-box;flex:none;min-height:84px;resize:vertical;font:13px/1.5 var(--mono)}
+.grid-opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.field{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);min-width:0}
+.field select,.field input[type=text]{font:14px var(--body);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 9px;min-width:0}
+.check{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--muted);cursor:pointer}
+.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.progress{height:6px;border-radius:999px;background:var(--line);overflow:hidden}
+.progress>span{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;max-height:60vh;overflow-y:auto}
+table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap;vertical-align:top}
+th{position:sticky;top:0;background:var(--surface);font:600 12px var(--body);color:var(--muted);z-index:1}
+td.mono{font-family:var(--mono);font-size:12px}
+.pill{display:inline-block;font:500 11px var(--body);padding:1px 7px;border-radius:999px;border:1px solid currentColor}
+.pill.ok{color:var(--ok)}.pill.warn{color:var(--warn)}.pill.err{color:var(--err)}.pill.muted{color:var(--muted)}
+.runs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.runs li{display:flex;gap:8px;align-items:center;min-width:0}
 @media (prefers-reduced-motion:no-preference){.msg{animation:in .18s ease-out}@keyframes in{from{opacity:.4;transform:translateY(3px)}}}
 </style>
 
@@ -80,6 +108,10 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   <header>
     <h1><small>NB Group · Apollo</small>Contact Finder</h1>
     <div class="head-right">
+      <div class="tabs" role="tablist">
+        <button class="tab" id="tabChat" role="tab" aria-selected="true" type="button">Chat</button>
+        <button class="tab" id="tabBulk" role="tab" aria-selected="false" type="button">Bulk lookup</button>
+      </div>
       <span class="credits" id="credits"></span>
       <button class="ghost" id="histBtn" type="button" aria-expanded="false" aria-controls="history">Past searches</button>
     </div>
@@ -89,6 +121,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     <p class="note" id="histNote" style="margin:0">Loading your saved searches…</p>
     <ul id="histList"></ul>
   </section>
+  <div id="chatView">
   <div id="log" aria-live="polite">
     <section class="examples" id="examples">
       <h2>Who are you looking for?</h2>
@@ -115,6 +148,63 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     </div>
     <p class="note err" id="banner" hidden></p>
   </form>
+  </div>
+
+  <section id="bulk" hidden>
+    <div class="panel">
+      <h2>Look up a list of companies</h2>
+      <div class="drop" id="drop">
+        <label class="field" for="bulkFile">Upload a CSV or Excel file with a column of websites
+          <input type="file" id="bulkFile" accept=".csv,.xlsx,.xls,.txt">
+        </label>
+        <label class="field" for="bulkPaste" style="width:100%">…or paste websites, one per line
+          <textarea id="bulkPaste" placeholder="acme.com&#10;https://www.example.com/about"></textarea>
+        </label>
+      </div>
+      <div class="grid-opts">
+        <label class="field" for="bulkRole">Who to find at each company
+          <select id="bulkRole"></select>
+        </label>
+        <label class="field" for="bulkTitles" id="bulkTitlesWrap" hidden>Job titles, separated by commas
+          <input type="text" id="bulkTitles" placeholder="CEO, Owner, Managing Partner">
+        </label>
+        <label class="field" for="bulkPer">People per company
+          <select id="bulkPer"><option>1</option><option selected>2</option><option>3</option><option>5</option></select>
+        </label>
+      </div>
+      <div class="actions">
+        <label class="check"><input type="checkbox" id="bulkMobile"> Include mobile numbers (uses phone credits)</label>
+        <label class="check"><input type="checkbox" id="bulkGuess" checked> Guess missing emails from the company's format (free, marked unverified)</label>
+      </div>
+      <p class="note" id="bulkSummary" style="margin:0">Add websites to see how many credits the lookup will use.</p>
+      <div class="actions">
+        <button class="primary" id="bulkStart" type="button" disabled>Start lookup</button>
+        <button class="ghost" id="bulkStop" type="button" hidden>Stop</button>
+      </div>
+    </div>
+
+    <div class="panel" id="bulkResults" hidden>
+      <div class="actions" style="justify-content:space-between">
+        <h2 id="bulkTitle">Results</h2>
+        <div class="actions">
+          <button class="ghost" id="exportCsv" type="button">Export CSV</button>
+          <button class="ghost" id="exportXlsx" type="button">Export Excel</button>
+        </div>
+      </div>
+      <div class="progress" aria-hidden="true"><span id="bulkBar"></span></div>
+      <p class="note" id="bulkStatus" style="margin:0" aria-live="polite"></p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Website</th><th>Company</th><th>Name</th><th>Title</th><th>Email</th><th>Email source</th><th>Mobile</th><th>Other phones</th><th>LinkedIn</th><th>Status</th></tr></thead>
+        <tbody id="bulkBody"></tbody>
+      </table></div>
+    </div>
+
+    <div class="panel">
+      <h3>Recent bulk lookups</h3>
+      <p class="note" id="runsNote" style="margin:0">Your finished lookups are saved here so you can export them again.</p>
+      <ul class="runs" id="runsList"></ul>
+    </div>
+  </section>
 </div>
 
 <script>
@@ -633,6 +723,7 @@ async function initHistory(){
   const uid = user ? await user.id().catch(() => null) : null;
   const canWrite = user ? await Promise.resolve(user.can?.("data.write")).catch(() => null) : null;
   store = db && uid && canWrite !== false ? dbStore(db, uid) : localStore;
+  bulkInitStore(store.kind === "account" ? {db, uid} : null);
   if (store.kind === "browser") { $("histNote").textContent = "Searches are saved in this browser only."; $("histNote").hidden = false; }
   let restored = false;
   const timer = setTimeout(() => { if (store.kind === "account" && !chats.length) { $("histNote").textContent = "Can't reach your saved searches yet. They'll appear when the connection is back."; $("histNote").hidden = false; } }, 10000);
@@ -646,11 +737,400 @@ async function initHistory(){
     $("histNote").textContent = "Your saved searches can't be reached right now, so new searches are kept in this browser."; $("histNote").hidden = false;
   });
 }
+
+/* ---------- Bulk lookup ---------- */
+const BULK_MAX = 1000, PART_ROWS = 200, BULK_LOCAL_KEY = "cf-bulk-v1";
+let bulkDomains = [], bulkRows = [], bulkRun = null, bulkCtl = null, bulkStore = null, bulkRuns = [];
+const domainCache = {};  // domain -> {samples, company}
+
+function normDomain(v){
+  let s = String(v || "").trim().toLowerCase();
+  if (!s) return null;
+  s = s.replace(/^mailto:/, "").replace(/^.*@/, "");
+  if (!/^[a-z]+:\/\//.test(s)) s = "http://" + s;
+  let host; try { host = new URL(s).hostname; } catch { return null; }
+  host = host.replace(/^www\d?\./, "");
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host) && !/\.(png|jpg|pdf)$/.test(host) ? host : null;
+}
+function parseCsv(text){
+  const rows = []; let row = [], cell = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; } else if (c === '"') q = false; else cell += c; }
+    else if (c === '"') q = true;
+    else if (c === "," || c === ";" || c === "\t") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") { if (c === "\r" && text[i + 1] === "\n") i++; row.push(cell); rows.push(row); row = []; cell = ""; }
+    else cell += c;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+function domainsFromRows(rows){
+  if (!rows.length) return [];
+  const header = rows[0].map(h => String(h || "").toLowerCase());
+  let col = header.findIndex(h => /website|domain|url|site|web/.test(h));
+  let start = col >= 0 ? 1 : 0;
+  if (col < 0) {  // no header: pick the column where most cells look like domains
+    let best = -1, bestN = 0;
+    const width = Math.max(...rows.slice(0, 50).map(r => r.length));
+    for (let c = 0; c < width; c++) { const n = rows.slice(0, 50).filter(r => normDomain(r[c])).length; if (n > bestN) { best = c; bestN = n; } }
+    col = best;
+  }
+  if (col < 0) return [];
+  return rows.slice(start).map(r => normDomain(r[col])).filter(Boolean);
+}
+let xlsxLib = null;
+function loadXlsx(){
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (xlsxLib) return xlsxLib;
+  xlsxLib = new Promise((res, rej) => {
+    const sc = document.createElement("script");
+    sc.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    sc.onload = () => res(window.XLSX); sc.onerror = () => { xlsxLib = null; rej(new Error("Excel support didn't load")); };
+    document.head.append(sc);
+  });
+  return xlsxLib;
+}
+let fileDomains = [];
+async function readFile(file){
+  const name = file.name.toLowerCase();
+  if (/\.(xlsx|xls)$/.test(name)) {
+    const X = await loadXlsx();
+    const wb = X.read(await file.arrayBuffer(), {type: "array"});
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    return domainsFromRows(X.utils.sheet_to_json(sheet, {header: 1, raw: false, defval: ""}));
+  }
+  return domainsFromRows(parseCsv(await file.text()));
+}
+function updateBulkSummary(){
+  const pasted = $("bulkPaste").value.split(/[\n,;]+/).map(normDomain).filter(Boolean);
+  bulkDomains = [...new Set([...fileDomains, ...pasted])];
+  const per = Number($("bulkPer").value), n = bulkDomains.length;
+  const sum = $("bulkSummary"), btn = $("bulkStart");
+  if (!n) { sum.textContent = "Add websites to see how many credits the lookup will use."; btn.disabled = true; btn.textContent = "Start lookup"; return; }
+  const over = n > BULK_MAX;
+  const count = Math.min(n, BULK_MAX), max = count * per;
+  sum.textContent = `${count.toLocaleString()} ${count === 1 ? "website" : "websites"} ready${over ? ` (only the first ${BULK_MAX.toLocaleString()} will run)` : ""}. ` +
+    `Finding people is free; contact details use up to ${max.toLocaleString()} Apollo credits (1 per person found)` +
+    ($("bulkMobile").checked ? `, plus up to ${max.toLocaleString()} phone credits for mobile numbers.` : ".");
+  btn.disabled = !!bulkCtl || !mcp; btn.textContent = `Start lookup (up to ${max.toLocaleString()} credits)`;
+}
+function bulkTitlesFor(){
+  const v = $("bulkRole").value;
+  if (v === "__custom") { const t = $("bulkTitles").value.split(",").map(x => x.trim()).filter(Boolean); return {titles: t}; }
+  return ROLE_PRESETS[v] || ROLE_PRESETS["decision makers"];
+}
+
+function phoneList(v){
+  const out = [];
+  const one = x => { if (!x) return; if (typeof x === "string") out.push(x); else if (typeof x === "object") { const n = x.sanitized_number || x.raw_number || x.number || x.phone; if (n) out.push(String(n)); } };
+  Array.isArray(v) ? v.forEach(one) : one(v);
+  return out;
+}
+function phonesFromAsync(res){
+  // Pull phones per Apollo person id out of an async reveal result, whatever its nesting.
+  const map = {};
+  const walk = o => {
+    if (!o || typeof o !== "object") return;
+    if (Array.isArray(o)) { o.forEach(walk); return; }
+    const id = o.id || o.person_id;
+    const keys = ["mobile_phone","direct_phone","corporate_phone","home_phone","other_phone","phone_numbers"];
+    if (id && keys.some(k => k in o)) {
+      const m = map[id] || (map[id] = {mobile: [], other: []});
+      m.mobile.push(...phoneList(o.mobile_phone));
+      for (const k of ["direct_phone","corporate_phone","home_phone","other_phone"]) m.other.push(...phoneList(o[k]));
+      for (const pn of o.phone_numbers || []) ((pn.type_cd || pn.type) === "mobile" ? m.mobile : m.other).push(...phoneList(pn));
+    }
+    for (const v of Object.values(o)) if (v && typeof v === "object") walk(v);
+  };
+  walk(res);
+  return map;
+}
+async function waitForReveal(requestId, signal, onTick){
+  for (let i = 0; i < 9; i++) {
+    await new Promise(r => setTimeout(r, 10000));
+    if (signal.aborted) return null;
+    onTick?.((i + 1) * 10);
+    try {
+      const res = await apollo("apollo_webhook_result_show", {request_id: String(requestId)}, signal);
+      if (res && (res.status === "success" || res.status === "failed")) return res;
+    } catch (e) { if (!/pending|404|not.?ready/i.test(e.message)) return null; }
+  }
+  return null;
+}
+const sleep = (ms, signal) => new Promise(r => { const t = setTimeout(r, ms); signal?.addEventListener("abort", () => { clearTimeout(t); r(); }, {once: true}); });
+async function apolloRetry(tool, input, signal){
+  try { return await apollo(tool, input, signal); }
+  catch (e) {
+    if (signal.aborted || !/rate|429|too many|didn't respond/i.test(e.message)) throw e;
+    await sleep(30000, signal);
+    return apollo(tool, input, signal);
+  }
+}
+
+async function guessFor(row, signal){
+  const d = row.website;
+  if (!domainCache[d]) {
+    domainCache[d] = {samples: []};
+    try {
+      const res = await apollo("apollo_contacts_search", {q_keywords: d, per_page: 50, fields: [{contacts: ["first_name","last_name","email"]}]}, signal);
+      domainCache[d].samples = (res.contacts || []).filter(c => c.email && c.email.toLowerCase().endsWith("@" + d) && c.first_name && c.last_name);
+    } catch (e) { if (signal.aborted) throw e; }
+  }
+  const samples = [...domainCache[d].samples, ...bulkRows.filter(r => r.website === d && r.email && r.email_source === "Apollo" && r.first_name && r.last_name)
+    .map(r => ({first_name: r.first_name, last_name: r.last_name, email: r.email}))];
+  const fmt = inferEmailFormat(samples);
+  const pattern = fmt.usable ? fmt.ranked[0].pattern : PATTERN_PRIOR[0];
+  const email = buildEmail(pattern, row.first_name, row.last_name, d);
+  if (!email) return;
+  row.email = email;
+  row.email_status = "unverified";
+  row.email_source = fmt.usable ? `Guess: ${pattern} format (${fmt.usable} known ${fmt.usable === 1 ? "email" : "emails"})` : `Guess: most common format (${pattern}), low confidence`;
+}
+
+function pill(cls, text){ return `<span class="pill ${cls}">${esc(text)}</span>`; }
+function renderBulkRows(){
+  const body = $("bulkBody"); body.innerHTML = "";
+  const frag = document.createDocumentFragment();
+  for (const r of bulkRows) {
+    const tr = document.createElement("tr");
+    const status = r.status === "Found" ? pill("ok", "Found") : r.status === "Looking up" ? pill("muted", "Looking up") : pill(r.status === "Error" ? "err" : "warn", r.status || "");
+    const src = r.email_source === "Apollo" ? pill("ok", "Apollo" + (r.email_status && r.email_status !== "verified" ? ` · ${r.email_status}` : "")) : r.email_source ? pill("warn", r.email_source) : "";
+    tr.innerHTML = `<td class="mono">${esc(r.website)}</td><td>${esc(r.company || "")}</td><td>${esc(r.name || "")}</td><td>${esc(r.title || "")}</td>` +
+      `<td class="mono">${r.email ? `<button type="button" class="chip" data-copy="${esc(r.email)}">${esc(r.email)}</button>` : ""}</td><td>${src}</td>` +
+      `<td class="mono">${esc(r.mobile || "")}</td><td class="mono">${esc(r.other_phones || "")}</td>` +
+      `<td>${r.linkedin ? `<a href="${esc(r.linkedin)}" target="_blank" rel="noopener">Profile</a>` : ""}</td><td>${status}${r.note ? ` <span class="note">${esc(r.note)}</span>` : ""}</td>`;
+    frag.append(tr);
+  }
+  body.append(frag);
+}
+$("bulkBody").addEventListener("click", async e => {
+  const chip = e.target.closest(".chip"); if (!chip) return;
+  try { await navigator.clipboard.writeText(chip.dataset.copy); chip.classList.add("copied"); setTimeout(() => chip.classList.remove("copied"), 1200); }
+  catch { const r = document.createRange(); r.selectNodeContents(chip); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+});
+function setBulkProgress(done, total, text){
+  $("bulkBar").style.width = total ? Math.round(done / total * 100) + "%" : "0";
+  $("bulkStatus").textContent = text;
+}
+
+async function runBulk(){
+  if (bulkCtl || !bulkDomains.length) return;
+  const sel = bulkTitlesFor();
+  if (!sel.titles?.length) { $("bulkSummary").textContent = "Enter at least one job title."; return; }
+  const domains = bulkDomains.slice(0, BULK_MAX), per = Number($("bulkPer").value);
+  const wantPhone = $("bulkMobile").checked, wantGuess = $("bulkGuess").checked;
+  const roleLabel = $("bulkRole").value === "__custom" ? sel.titles.join(", ") : $("bulkRole").value;
+  bulkCtl = new AbortController(); const signal = bulkCtl.signal;
+  bulkRun = {id: "b" + Date.now().toString(36), title: `${domains.length} ${domains.length === 1 ? "company" : "companies"} · ${roleLabel}`, createdAt: Date.now(), status: "running"};
+  bulkRows = [];
+  $("bulkResults").hidden = false; $("bulkTitle").textContent = bulkRun.title;
+  $("bulkStart").disabled = true; $("bulkStop").hidden = false;
+  let credits = 0;
+  const group = Math.max(1, Math.floor(10 / per));
+  try {
+    for (let g = 0; g < domains.length && !signal.aborted; g += group) {
+      const chunk = domains.slice(g, g + group);
+      setBulkProgress(g, domains.length, `Searching companies ${g + 1}–${g + chunk.length} of ${domains.length}…`);
+      // 1. Find people at each company (free).
+      const picked = [];
+      await Promise.all(chunk.map(async d => {
+        try {
+          const res = await apolloRetry("apollo_mixed_people_api_search", {q_organization_domains_list: [d], person_titles: sel.titles, ...(sel.seniorities ? {person_seniorities: sel.seniorities} : {}), per_page: 10}, signal);
+          const people = res.people || [];
+          if (!people.length) { bulkRows.push({website: d, status: "No match", note: "No matching people in Apollo"}); return; }
+          const ranked = [...people.filter(p => p.has_email), ...people.filter(p => !p.has_email)].slice(0, per);
+          for (const p of ranked) { const row = {website: d, company: p.organization?.name || "", apollo_id: p.id, name: [p.first_name, p.last_name_obfuscated].filter(Boolean).join(" "), title: p.title || "", status: "Looking up"}; bulkRows.push(row); picked.push(row); }
+        } catch (e) { if (!signal.aborted) bulkRows.push({website: d, status: "Error", note: e.message}); }
+      }));
+      renderBulkRows();
+      if (signal.aborted) break;
+      // 2. Get contact details for everyone picked in this group (1 credit per person found).
+      if (picked.length) {
+        setBulkProgress(g, domains.length, `Getting contact details for ${picked.length} ${picked.length === 1 ? "person" : "people"}…`);
+        try {
+          const res = await apolloRetry("apollo_people_bulk_match", {details: picked.map(r => ({id: r.apollo_id})), reveal_phone_number: wantPhone}, signal);
+          const byId = {}; for (const m of (res.matches || []).filter(Boolean)) byId[m.id] = m;
+          for (const row of picked) {
+            const m = byId[row.apollo_id];
+            if (!m) { row.status = "Not found"; row.note = "Apollo couldn't return details"; continue; }
+            credits++;
+            row.first_name = m.first_name || ""; row.last_name = m.last_name || "";
+            row.name = m.name || [m.first_name, m.last_name].filter(Boolean).join(" ") || row.name;
+            row.title = m.title || row.title; row.company = m.organization?.name || row.company;
+            row.linkedin = m.linkedin_url || "";
+            if (m.email) { row.email = m.email; row.email_status = m.email_status || ""; row.email_source = "Apollo"; }
+            const nums = (m.phone_numbers || []);
+            row.mobile = nums.filter(n => (n.type_cd || n.type) === "mobile").flatMap(phoneList).join("; ");
+            row.other_phones = nums.filter(n => (n.type_cd || n.type) !== "mobile").flatMap(phoneList).join("; ");
+            row.status = "Found";
+          }
+          if (wantPhone && res.request_id) {
+            const rev = await waitForReveal(res.request_id, signal, sec => setBulkProgress(g, domains.length, `Waiting for mobile numbers from Apollo (${sec}s)…`));
+            if (rev) {
+              const map = phonesFromAsync(rev);
+              for (const row of picked) { const ph = map[row.apollo_id]; if (!ph) continue;
+                if (ph.mobile.length) row.mobile = [...new Set(ph.mobile)].join("; ");
+                if (ph.other.length) row.other_phones = [...new Set([...(row.other_phones ? row.other_phones.split("; ") : []), ...ph.other])].join("; "); }
+            } else if (!signal.aborted) for (const row of picked) if (row.status === "Found" && !row.mobile) row.note = "Mobile still processing in Apollo";
+          }
+        } catch (e) { if (!signal.aborted) for (const row of picked) { row.status = "Error"; row.note = e.message; } }
+      }
+      // 3. Guess missing emails from each company's format (free).
+      if (wantGuess) for (const row of picked) {
+        if (signal.aborted) break;
+        if (row.status === "Found" && !row.email && row.first_name && row.last_name) { try { await guessFor(row, signal); } catch {} }
+      }
+      renderBulkRows();
+      await saveBulk(false);
+      refreshCredits();
+    }
+  } finally {
+    const stopped = signal.aborted;
+    bulkRun.status = stopped ? "stopped" : "done";
+    const found = bulkRows.filter(r => r.status === "Found").length, withEmail = bulkRows.filter(r => r.email).length;
+    setBulkProgress(stopped ? 0 : 1, 1, `${stopped ? "Stopped. " : "Done. "}${found} ${found === 1 ? "person" : "people"} found, ${withEmail} with an email (${bulkRows.filter(r => r.email_status === "unverified").length} guessed), about ${credits} credits used.`);
+    if (stopped) $("bulkBar").style.width = "100%";
+    bulkCtl = null; $("bulkStop").hidden = true; updateBulkSummary();
+    await saveBulk(true);
+  }
+}
+
+/* --- Export --- */
+const EXPORT_COLS = [["Website","website"],["Company","company"],["Name","name"],["Title","title"],["Email","email"],["Email status","email_status"],["Email source","email_source"],["Mobile","mobile"],["Other phones","other_phones"],["LinkedIn","linkedin"],["Apollo ID","apollo_id"],["Status","status"],["Notes","note"]];
+function exportRows(){ return bulkRows.map(r => Object.fromEntries(EXPORT_COLS.map(([h, k]) => [h, r[k] ?? ""]))); }
+function fileBase(){ const d = new Date(bulkRun?.createdAt || Date.now()); return `contact-finder-${d.toISOString().slice(0, 10)}`; }
+async function offerFile(filename, data){
+  const dl = await claude.use("downloads").catch(() => null);
+  if (!dl) { $("bulkStatus").textContent = "Saving files isn't available in this view. Open the page in claude.ai."; return; }
+  try { await dl.save({filename, data}); }
+  catch (e) { if (e?.code !== "declined") $("bulkStatus").textContent = e?.code === "rate_limited" ? "A save is already waiting for your answer." : "Couldn't save the file. Try again."; }
+}
+$("exportCsv").addEventListener("click", () => {
+  if (!bulkRows.length) return;
+  const cell = v => { const s = String(v ?? ""); return /[",\n\r]/.test(s) || /^[=+\-@]/.test(s) ? `"${(/^[=+\-@]/.test(s) ? "'" : "") + s.replace(/"/g, '""')}"` : s; };
+  const lines = [EXPORT_COLS.map(c => c[0]).join(","), ...exportRows().map(r => EXPORT_COLS.map(([h]) => cell(r[h])).join(","))];
+  offerFile(fileBase() + ".csv", "﻿" + lines.join("\r\n"));
+});
+$("exportXlsx").addEventListener("click", async () => {
+  if (!bulkRows.length) return;
+  let X; try { X = await loadXlsx(); } catch { $("bulkStatus").textContent = "Excel export didn't load. Use Export CSV, which opens in Excel too."; return; }
+  const ws = X.utils.json_to_sheet(exportRows(), {header: EXPORT_COLS.map(c => c[0])});
+  ws["!cols"] = EXPORT_COLS.map(([h, k]) => ({wch: Math.min(48, Math.max(h.length, ...bulkRows.slice(0, 200).map(r => String(r[k] ?? "").length)) + 2)}));
+  ws["!autofilter"] = {ref: ws["!ref"]};
+  const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, "Contacts");
+  offerFile(fileBase() + ".xlsx", new Uint8Array(X.write(wb, {bookType: "xlsx", type: "array"})));
+});
+
+/* --- Saved bulk runs (private to each person, like chats) --- */
+function bulkInitStore(acct){
+  if (acct) {
+    const runs = acct.db.doc("data/users/" + acct.uid + "/bulk").collection("runs");
+    bulkStore = {
+      kind: "account",
+      subscribe(cb){ return runs.orderBy("createdAt", "desc").limit(20).onSnapshot(snap => cb(snap.docs.map(d => ({id: d.id, ...d.data()}))), () => {}); },
+      async saveMeta(run){ await runs.doc(run.id).set(run); },
+      async savePart(runId, i, rows){ await runs.doc(runId).collection("parts").doc("p" + i).set({rows}); },
+      async loadRows(run){ const out = []; for (let i = 0; i < (run.parts || 0); i++) { const d = await runs.doc(run.id).collection("parts").doc("p" + i).get(); if (d.exists) out.push(...(d.data().rows || [])); } return out; },
+      async remove(run){ for (let i = 0; i < (run.parts || 0); i++) await runs.doc(run.id).collection("parts").doc("p" + i).delete(); await runs.doc(run.id).delete(); }
+    };
+  } else {
+    const read = () => { try { return JSON.parse(localStorage.getItem(BULK_LOCAL_KEY) || "{}"); } catch { return {}; } };
+    const write = all => { try { localStorage.setItem(BULK_LOCAL_KEY, JSON.stringify(all)); } catch {} };
+    bulkStore = {
+      kind: "browser",
+      subscribe(cb){ cb(Object.values(read()).map(r => r.meta)); return () => {}; },
+      async saveMeta(run){ const all = read(); all[run.id] = {...(all[run.id] || {}), meta: run}; const ids = Object.keys(all).sort((a, b) => all[b].meta.createdAt - all[a].meta.createdAt); for (const old of ids.slice(5)) delete all[old]; write(all); renderRuns(Object.values(all).map(r => r.meta)); },
+      async savePart(runId, i, rows){ const all = read(); if (!all[runId]) return; (all[runId].parts ||= [])[i] = rows; write(all); },
+      async loadRows(run){ return (read()[run.id]?.parts || []).flat(); },
+      async remove(run){ const all = read(); delete all[run.id]; write(all); renderRuns(Object.values(all).map(r => r.meta)); }
+    };
+    $("runsNote").textContent = "Your last 5 lookups are kept in this browser so you can export them again.";
+  }
+  bulkStore.subscribe(renderRuns);
+}
+let bulkSaveChain = Promise.resolve(), savedParts = 0;
+function saveBulk(final){
+  if (!bulkRun || !bulkStore) return Promise.resolve();
+  const run = {...bulkRun, updatedAt: Date.now(), rows: bulkRows.length, found: bulkRows.filter(r => r.status === "Found").length, parts: Math.ceil(bulkRows.length / PART_ROWS)};
+  const rows = bulkRows.map(r => ({...r}));
+  bulkSaveChain = bulkSaveChain.then(async () => {
+    // Rewrite the last saved part (it may have grown) and any new ones.
+    const from = Math.max(0, savedParts - 1);
+    for (let i = from; i < run.parts; i++) await bulkStore.savePart(run.id, i, rows.slice(i * PART_ROWS, (i + 1) * PART_ROWS));
+    savedParts = run.parts;
+    await bulkStore.saveMeta(run);
+  }).catch(() => { if (final) $("runsNote").textContent = "This lookup couldn't be saved. Export it now so you don't lose it."; });
+  if (final) bulkSaveChain = bulkSaveChain.then(() => { savedParts = 0; });
+  return bulkSaveChain;
+}
+function renderRuns(list){
+  bulkRuns = (list || []).filter(Boolean).sort((a, b) => b.createdAt - a.createdAt);
+  const ul = $("runsList"); ul.innerHTML = "";
+  for (const r of bulkRuns) {
+    const li = document.createElement("li");
+    const open = document.createElement("button"); open.type = "button"; open.className = "hist-open"; open.dataset.run = r.id;
+    const t = document.createElement("span"); t.className = "hist-title"; t.textContent = `${r.title} · ${r.found ?? 0} found${r.status === "stopped" ? " (stopped)" : r.status === "running" ? " (in progress)" : ""}`;
+    const d = document.createElement("span"); d.className = "hist-date"; d.textContent = fmtDate(r.createdAt);
+    open.append(t, d);
+    const del = document.createElement("button"); del.type = "button"; del.className = "hist-del"; del.dataset.delRun = r.id; del.textContent = "Delete";
+    li.append(open, del); ul.append(li);
+  }
+  if (!bulkRuns.length) $("runsNote").hidden = false;
+}
+$("runsList").addEventListener("click", async e => {
+  const open = e.target.closest("[data-run]");
+  if (open && !bulkCtl) {
+    const run = bulkRuns.find(r => r.id === open.dataset.run); if (!run) return;
+    $("bulkStatus").textContent = "Opening saved lookup…"; $("bulkResults").hidden = false;
+    try { bulkRows = await bulkStore.loadRows(run); } catch { $("bulkStatus").textContent = "Couldn't open that lookup. Try again."; return; }
+    bulkRun = {...run}; $("bulkTitle").textContent = run.title; renderBulkRows();
+    setBulkProgress(1, 1, `Saved ${fmtDate(run.createdAt)}: ${run.found ?? 0} people found. Export it with the buttons above.`);
+    $("bulkResults").scrollIntoView({behavior: "smooth", block: "start"});
+    return;
+  }
+  const del = e.target.closest("[data-del-run]");
+  if (del) {
+    if (del.dataset.confirm !== "1") { del.dataset.confirm = "1"; del.textContent = "Confirm delete"; setTimeout(() => { del.dataset.confirm = ""; del.textContent = "Delete"; }, 4000); return; }
+    const run = bulkRuns.find(r => r.id === del.dataset.delRun);
+    if (run) { try { await bulkStore.remove(run); } catch { $("runsNote").textContent = "Couldn't delete that lookup. Try again."; } }
+  }
+});
+
+/* --- Wiring --- */
+for (const name of Object.keys(ROLE_PRESETS)) { const o = document.createElement("option"); o.value = name; o.textContent = name[0].toUpperCase() + name.slice(1); $("bulkRole").append(o); }
+{ const o = document.createElement("option"); o.value = "__custom"; o.textContent = "Custom job titles…"; $("bulkRole").append(o); }
+$("bulkRole").addEventListener("change", () => { $("bulkTitlesWrap").hidden = $("bulkRole").value !== "__custom"; updateBulkSummary(); });
+for (const id of ["bulkPer", "bulkMobile"]) $(id).addEventListener("change", updateBulkSummary);
+$("bulkPaste").addEventListener("input", updateBulkSummary);
+$("bulkFile").addEventListener("change", async () => {
+  const f = $("bulkFile").files[0]; if (!f) { fileDomains = []; updateBulkSummary(); return; }
+  $("bulkSummary").textContent = "Reading file…";
+  try { fileDomains = await readFile(f); if (!fileDomains.length) { $("bulkSummary").textContent = "No websites found in that file. Put them in a column headed \"Website\"."; $("bulkStart").disabled = true; return; } }
+  catch { fileDomains = []; $("bulkSummary").textContent = "Couldn't read that file. Save it as CSV and try again."; return; }
+  updateBulkSummary();
+});
+const drop = $("drop");
+drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", e => { e.preventDefault(); drop.classList.remove("over"); const f = e.dataTransfer.files[0]; if (f) { const dt = new DataTransfer(); dt.items.add(f); $("bulkFile").files = dt.files; $("bulkFile").dispatchEvent(new Event("change")); } });
+$("bulkStart").addEventListener("click", runBulk);
+$("bulkStop").addEventListener("click", () => bulkCtl?.abort());
+function showTab(bulk){
+  $("tabChat").setAttribute("aria-selected", String(!bulk)); $("tabBulk").setAttribute("aria-selected", String(bulk));
+  $("chatView").hidden = bulk; $("bulk").hidden = !bulk; $("history").hidden = true; $("histBtn").hidden = bulk;
+  try { localStorage.setItem("cf-tab", bulk ? "bulk" : "chat"); } catch {}
+}
+$("tabChat").addEventListener("click", () => showTab(false));
+$("tabBulk").addEventListener("click", () => { showTab(true); updateBulkSummary(); });
+try { if (localStorage.getItem("cf-tab") === "bulk") showTab(true); } catch {}
+
 initHistory();
 
 (async () => {
   [sample, mcp] = await Promise.all([claude.use("sample").catch(() => null), claude.use("mcp").catch(() => null)]);
   if (!sample) showBanner("Claude isn't available in this view. Open the page in claude.ai.");
   else if (!mcp) showBanner("Apollo isn't available in this view. Open the page in claude.ai with the Apollo.io connector added.");
+  updateBulkSummary();
 })();
 </script>
